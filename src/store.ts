@@ -20,7 +20,7 @@ function configureAppStore() {
 
   sagaMiddleware.run(function* () {
     yield fork(DiscoverAndListen)
-    console.log("wee")
+    console.log({ store })
   })
   return store
 }

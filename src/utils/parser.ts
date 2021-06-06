@@ -1,17 +1,4 @@
-export interface YeelightDevice {
-  id: string
-  location: string
-  host: string
-  port: number
-  connected: boolean
-
-  power: boolean
-  brightness: number
-  model: string
-  rgbDec: number
-  hue: number
-  saturation: number
-}
+import { YeelightDevice } from "../types";
 
 export function parseDevice(msg: string): YeelightDevice {
   const headers = msg.toString().split("\r\n")
@@ -30,21 +17,39 @@ export function parseDevice(msg: string): YeelightDevice {
       device.power = header.slice(7) === "on"
     }
     if (header.indexOf("bright:") >= 0) {
-      device.brightness = header.slice(8)
+      device.brightness = +header.slice(8)
     }
     if (header.indexOf("model:") >= 0) {
       device.model = header.slice(7)
     }
     if (header.indexOf("rgb:") >= 0) {
-      device.rgbDec = header.slice(5)
+      device.rgbDec = +header.slice(5)
     }
     if (header.indexOf("hue:") >= 0) {
-      device.hue = header.slice(5)
+      device.hue = +header.slice(5)
     }
     if (header.indexOf("sat:") >= 0) {
-      device.saturation = header.slice(5)
+      device.saturation = +header.slice(5)
     }
   }
   return device
 }
 
+export function normaliseProps(props: any) {
+  return Object.fromEntries(
+    Object.entries(props).map(([key, value]) => {
+      switch (key) {
+        case "power":
+          return [key, value === "on"]
+        case "sat":
+          return ["saturation", value]
+        case "rgb":
+          return ["rgbDec", value]
+        case "bright":
+          return ["brightness", value]
+      }
+
+      return [key, value]
+    })
+  )
+}

@@ -1,10 +1,11 @@
-import { createSlice, PayloadAction } from "@reduxjs/toolkit"
+import { createSlice, createAction, PayloadAction } from "@reduxjs/toolkit"
 import { eventChannel, EventChannel } from "redux-saga"
 import { take, fork, put, call } from "redux-saga/effects"
 import { DgramAsPromised, SocketAsPromised } from "dgram-as-promised"
 import { Socket } from "net"
 
-import { parseDevice, YeelightDevice } from "./utils/parser"
+import { parseDevice, normaliseProps } from "./utils/parser"
+import { YeelightDevice } from "./types"
 
 interface YeelightState {
   isDiscovering: boolean
@@ -24,11 +25,9 @@ export const {
   initialState,
   reducers: {
     startDiscovery(state) {
-      console.log("discover start")
       state.isDiscovering = true
     },
     stopDiscovery(state) {
-      console.log("discover stop")
       state.isDiscovering = false
     },
     deviceDiscovered(state, action: PayloadAction<YeelightDevice>) {
@@ -40,7 +39,7 @@ export const {
     deviceStateChanged(state, { payload }) {
       state.devices = state.devices.map(device => ({
         ...device,
-        ...(device.id === payload.deviceId && payload.params),
+        ...(device.id === payload.deviceId && normaliseProps(payload.params)),
       }))
     },
   },
@@ -67,20 +66,13 @@ function createDiscoverChannel(
   socket: SocketAsPromised,
   port: number
 ): EventChannel<YeelightDevice> {
-  // console.log("discoveryChannel creating")
   return eventChannel(emit => {
-    // console.log("discoveryChannel start")
-
     socket.socket
       .on("advertise-alive", msg => {
-        console.log(
-          `[createDiscoverChannel][advertise-alive]: ${msg.toString()}`
-        )
-        emit(msg.toString())
+        emit(parseDevice(msg.toString()))
       })
       .on("message", msg => {
         emit(parseDevice(msg.toString()))
-        console.log(`[createDiscoverChannel][message]: ${msg.toString()}`)
       })
 
     socket.bind(port, "0.0.0.0").then(() => {
@@ -93,16 +85,17 @@ function createDiscoverChannel(
 }
 
 function* discover() {
-  // console.log("discovery: start")
   const socket = DgramAsPromised.createSocket("udp4")
   yield fork(
     function* (socket: SocketAsPromised, port: number) {
-      // console.log("listenForDiscovery")
-      const discoveryChannel = yield call(createDiscoverChannel, socket, port)
+      const discoveryChannel: EventChannel<YeelightDevice> = yield call(
+        createDiscoverChannel,
+        socket,
+        port
+      )
       while (true) {
         try {
-          // console.log("ready for device")
-          const device = yield take(discoveryChannel)
+          const device: YeelightDevice = yield take(discoveryChannel)
           yield put(deviceDiscovered(device))
         } catch (e) {
           console.log("[discover][error]:", e)
@@ -113,7 +106,7 @@ function* discover() {
     socket,
     1982
   )
-  console.log("sending discover")
+
   yield call(
     sendMessage,
     'M-SEARCH * HTTP/1.1\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n',
@@ -126,24 +119,41 @@ export function* DiscoverAndListen() {
   yield fork(discover)
   while (true) {
     const { payload: device } = yield take(deviceDiscovered.toString())
-    console.log({ device })
     if (device.port) {
       yield fork(function* (device: any) {
         const socket = new Socket()
-        const deviceChannel = yield call(createDeviceChannel, socket)
+        const deviceChannel: EventChannel<any> = yield call(
+          createDeviceChannel,
+          socket
+        )
 
         socket.connect(device.port, device.host)
-        while (true) {
-          try {
-            const changes = yield take(deviceChannel)
-            yield put(
-              deviceStateChanged({
-                deviceId: device.id,
-                ...JSON.parse(changes),
-              })
-            )
-          } catch (e) {}
-        }
+        yield fork(function* sendChanges(socket) {
+          const { payload } = yield take(updateDevice.toString())
+          if (payload.id === device.id) {
+            console.log("PAYLOAD", {payload})
+            socket.write(JSON.stringify(payload) + "\r\n")
+          }
+        }, socket)
+        yield fork(function* listenForChanges() {
+          while (true) {
+            try {
+              const deviceMessage: any = JSON.parse(yield take(deviceChannel))
+
+              if (deviceMessage?.result) {
+              }
+
+              if (deviceMessage?.params) {
+                yield put(
+                  deviceStateChanged({
+                    deviceId: device.id,
+                    ...deviceMessage,
+                  })
+                )
+              }
+            } catch (e) {}
+          }
+        })
       }, device)
     }
   }
