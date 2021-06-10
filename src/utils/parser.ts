@@ -1,4 +1,4 @@
-import { YeelightDevice } from "../types";
+import { YeelightDevice } from "../types"
 
 export function parseDevice(msg: string): YeelightDevice {
   const headers = msg.toString().split("\r\n")
@@ -11,7 +11,7 @@ export function parseDevice(msg: string): YeelightDevice {
       device.location = header.slice(10)
       const tmp = device.location.split(":")
       device.host = tmp[1].replace("//", "")
-      device.port = parseInt(tmp[2], 10)
+      device.port = 0 + tmp[2]
     }
     if (header.indexOf("power:") >= 0) {
       device.power = header.slice(7) === "on"

@@ -53,11 +53,17 @@ const sendMessage = (
   return socket.send(Buffer.from(message), 0, message.length, 1982, address)
 }
 
-function createDeviceChannel(socket: Socket): EventChannel<any> {
+function createDeviceChannel(
+  socket: Socket,
+  host: string,
+  port: number
+): EventChannel<any> {
   return eventChannel(emit => {
     socket.on("data", data => {
       emit(data.toString())
     })
+
+    socket.connect(port, host)
     return socket.destroy
   })
 }
@@ -124,17 +130,19 @@ export function* DiscoverAndListen() {
         const socket = new Socket()
         const deviceChannel: EventChannel<any> = yield call(
           createDeviceChannel,
-          socket
+          socket,
+          device.host,
+          device.port
         )
 
-        socket.connect(device.port, device.host)
         yield fork(function* sendChanges(socket) {
           const { payload } = yield take(updateDevice.toString())
           if (payload.id === device.id) {
-            console.log("PAYLOAD", {payload})
+            console.log("PAYLOAD", { payload })
             socket.write(JSON.stringify(payload) + "\r\n")
           }
         }, socket)
+
         yield fork(function* listenForChanges() {
           while (true) {
             try {
