@@ -4,6 +4,7 @@ import { take, fork, put, call } from "redux-saga/effects"
 import { DgramAsPromised, SocketAsPromised } from "dgram-as-promised"
 import { Socket } from "net"
 
+import { updateDevice } from "./actions"
 import { parseDevice, normaliseProps } from "./utils/parser"
 import { YeelightDevice } from "./types"
 
